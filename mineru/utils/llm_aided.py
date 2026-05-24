@@ -1,12 +1,22 @@
 # Copyright (c) Opendatalab. All rights reserved.
 from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
-import json_repair
 from loguru import logger
 from openai import OpenAI
+from pydantic import BaseModel
 
 from mineru.backend.pipeline.pipeline_middle_json_mkcontent import merge_para_with_text
 from mineru.utils.enum_class import BlockType
+
+
+class _TitleLevel(BaseModel):
+    id: int
+    level: Literal[1, 2, 3, 4]
+
+
+class _TitleLevelResponse(BaseModel):
+    levels: list[_TitleLevel]
 
 
 TITLE_BLOCK_TYPES = {
@@ -60,92 +70,41 @@ def _build_title_dict(title_block_refs):
 
 
 def _build_title_optimize_prompt(title_dict):
-    return f"""输入的内容是一篇文档中所有标题组成的字典，请根据以下指南优化标题的结果，使结果符合正常文档的层次结构：
+    return f"""
+    You are given a JSON object whose entries are every heading found in a single document. Each value is a list [heading_text, line_height, page_number]. Line_height is the average line height of the block containing the heading (larger usually = higher-level heading).
 
-1. 字典中每个value均为一个list，包含以下元素：
-    - 标题文本
-    - 文本行高是标题所在块的平均行高
-    - 标题所在的页码
+    Assign each heading an integer level from 1 to 4, where 1 is the top of the hierarchy (e.g. parts / chapters) and 4 is the deepest sub-heading.
 
-2. 保留原始内容：
-    - 输入的字典中所有元素都是有效的，不能删除字典中的任何元素
-    - 请务必保证输出的字典中元素的数量和输入的数量一致
+    Rules:
+    - Use the heading text semantics AND the line_height as your signals.
+    - Levels must be continuous: never jump from level 1 directly to level 3 — go through 2 first.
+    - Maximum depth is 4.
+    - Return EVERY id from the input exactly once. Do not add, drop, rename, or merge ids.
+    - The "levels" array must have the same number of entries as the input dict.
 
-3. 保持字典内key-value的对应关系不变
-
-4. 优化层次结构：
-    - 根据标题内容的语义为每个标题元素添加适当的层次结构
-    - 行高较大的标题一般是更高级别的标题
-    - 标题从前至后的层级必须是连续的，不能跳过层级
-    - 标题层级最多为4级，不要添加过多的层级
-    - 优化后的标题只保留代表该标题的层级的整数，不要保留其他信息
-
-5. 合理性检查与微调：
-    - 在完成初步分级后，仔细检查分级结果的合理性
-    - 根据上下文关系和逻辑顺序，对不合理的分级进行微调
-    - 确保最终的分级结果符合文档的实际结构和逻辑
-
-IMPORTANT:
-请直接返回优化过的由标题层级组成的字典，格式为{{标题id:标题层级}}，如下：
-{{
-  0:1,
-  1:2,
-  2:2,
-  3:3
-}}
-不需要对字典格式化，不需要返回任何其他信息。
-
-Input title list:
-{title_dict}
-
-Corrected title list:
-"""
+    Input:
+    {title_dict}
+    """
 
 
 def _build_relative_title_optimize_prompt(title_dict):
-    return f"""输入内容是某一篇文档中除文章标题外的全部章节/段落标题组成的字典。
+    return f"""
+    You are given a JSON object whose entries are every chapter / section / sub-section heading from a single document, EXCLUDING the document's main title (which has already been identified by the system and assigned level 1).
 
-请注意：
-- 文章标题不在本次输入中，已经由系统单独识别并设置为1级标题
+    Each value is a list [heading_text, line_height, page_number]. Line_height is the average line height of the block containing the heading (larger usually = higher-level heading).
 
-1. 字典中每个value均为一个list，包含以下元素：
-    - 标题文本
-    - 文本行高是标题所在块的平均行高
-    - 标题所在的页码
+    Assign each heading an integer level from 1 to 4, where 1 is the top of the hierarchy and 4 is the deepest sub-heading.
 
-2. 保留原始内容：
-    - 输入的字典中所有元素都是有效的，不能删除字典中的任何元素
-    - 请务必保证输出的字典中元素的数量和输入的数量一致
+    Rules:
+    - Use the heading text semantics AND the line_height as your signals.
+    - Levels must be continuous: never jump from level 1 directly to level 3 — go through 2 first.
+    - Maximum depth is 4.
+    - Return EVERY id from the input exactly once. Do not add, drop, rename, or merge ids.
+    - The "levels" array must have the same number of entries as the input dict.
 
-3. 保持字典内key-value的对应关系不变
-
-4. 优化层次结构：
-    - 根据标题内容的语义为每个标题元素添加适当的层次结构
-    - 行高较大的标题一般是更高级别的标题
-    - 标题从前至后的层级必须是连续的，不能跳过层级
-    - 标题层级最多为4级，不要添加过多的层级
-    - 优化后的标题只保留代表该标题的层级的整数，不要保留其他信息
-
-5. 合理性检查与微调：
-    - 在完成初步分级后，仔细检查分级结果的合理性
-    - 根据上下文关系和逻辑顺序，对不合理的分级进行微调
-    - 确保最终的分级结果符合文档的实际结构和逻辑
-
-IMPORTANT:
-请直接返回优化后的标题层级字典，格式为{{标题id:标题层级}}，如下：
-{{
-  0:1,
-  1:2,
-  2:2,
-  3:3
-}}
-不要返回 Markdown，不要返回代码块，不要返回任何解释文字。
-
-Input title list:
-{title_dict}
-
-Corrected title list:
-"""
+    Input:
+    {title_dict}
+    """
 
 
 def _request_title_levels(title_aided_config, title_dict, prompt_builder=None):
@@ -157,8 +116,6 @@ def _request_title_levels(title_aided_config, title_dict, prompt_builder=None):
         base_url=title_aided_config["base_url"],
     )
 
-    retry_count = 0
-    max_retries = 3
     expected_keys = set(range(len(title_dict)))
     if prompt_builder is None:
         prompt_builder = _build_title_optimize_prompt
@@ -166,46 +123,37 @@ def _request_title_levels(title_aided_config, title_dict, prompt_builder=None):
 
     logger.debug(f"Requesting LLM for title optimization with prompt: {title_optimize_prompt}")
 
-    api_params = {
+    parse_params = {
         "model": title_aided_config["model"],
         "messages": [{"role": "user", "content": title_optimize_prompt}],
-        "temperature": 0.7,
-        "stream": True,
+        "temperature": 0,
+        "response_format": _TitleLevelResponse,
     }
     if "enable_thinking" in title_aided_config:
-        api_params["extra_body"] = {
+        parse_params["extra_body"] = {
             "enable_thinking": title_aided_config["enable_thinking"]
         }
 
-    while retry_count < max_retries:
+    for retry in range(3):
         try:
-            completion = client.chat.completions.create(**api_params)
-            content_pieces = []
-            for chunk in completion:
-                if chunk.choices and chunk.choices[0].delta.content is not None:
-                    content_pieces.append(chunk.choices[0].delta.content)
+            completion = client.chat.completions.parse(**parse_params)
+            parsed = completion.choices[0].message.parsed
+            if parsed is None:
+                logger.warning("Model returned no parsed payload.")
+                continue
 
-            content = "".join(content_pieces).strip()
-            if "</think>" in content:
-                idx = content.index("</think>") + len("</think>")
-                content = content[idx:].strip()
-
-            logger.debug(f"Raw LLM output for title levels: {content}")
-            dict_completion = json_repair.loads(content)
-            dict_completion = {int(k): int(v) for k, v in dict_completion.items()}
-
-            if set(dict_completion.keys()) == expected_keys:
-                return dict_completion
+            result = {entry.id: entry.level for entry in parsed.levels}
+            if set(result.keys()) == expected_keys:
+                return result
 
             logger.warning(
-                "The keys in the optimized title result do not match the input titles."
+                "The ids in the optimized title result do not match the input titles "
+                f"(missing={expected_keys - result.keys()}, extra={result.keys() - expected_keys})."
             )
         except Exception as e:
             logger.exception(e)
 
-        retry_count += 1
-
-    logger.error("Failed to decode dict after maximum retries.")
+    logger.error("Failed to obtain valid title levels after maximum retries.")
     return None
 
 

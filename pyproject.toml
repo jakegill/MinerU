@@ -9,7 +9,7 @@ license = "LicenseRef-MinerU-Open-Source-License"
 license-files = ["LICENSE.md"]
 description = "A practical document parsing tool for converting PDF, images, DOCX, PPTX, and XLSX into Markdown and JSON"
 readme = "README.md"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.15"
 keywords = [
     "mineru",
     "magic-pdf",
