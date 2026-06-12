@@ -161,6 +161,8 @@ def cleanup_internal_para_block_metadata(pdf_info_list):
         page_info.pop(_EDGE_TEXT_LINE_HINTS_KEY, None)
         for block in page_info.get("para_blocks", []):
             block.pop(_CROSS_PAGE_MERGE_KEY, None)
+        for block in page_info.get("pruned_blocks", []):
+            block.pop(_CROSS_PAGE_MERGE_KEY, None)
 
 
 def edge_text_line_hints_key():

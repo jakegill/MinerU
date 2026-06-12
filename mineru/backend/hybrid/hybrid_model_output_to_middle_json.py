@@ -30,12 +30,26 @@ from mineru.utils.ocr_utils import OcrConfidence, rotate_vertical_crop_if_needed
 from mineru.utils.pdfium_guard import close_pdfium_document, pdfium_guard
 from mineru.version import __version__
 
-from mineru.utils.llm_aided import llm_aided_title
+from mineru.utils.llm_aided import (
+    llm_aided_formula_prune,
+    llm_aided_text_prune,
+    llm_aided_title,
+)
+
 title_aided_enable = False
+title_aided_config = {}
+text_aided_enable = False
+text_aided_config = {}
+formula_aided_enable = False
+formula_aided_config = {}
 llm_aided_config = get_llm_aided_config()
 if llm_aided_config:
     title_aided_config = llm_aided_config.get('title_aided', {})
     title_aided_enable = title_aided_config.get('enable', False)
+    text_aided_config = llm_aided_config.get('text_aided', {})
+    text_aided_enable = text_aided_config.get('enable', False)
+    formula_aided_config = llm_aided_config.get('formula_aided', {})
+    formula_aided_enable = formula_aided_config.get('enable', False)
 
 
 def blocks_to_page_info(
@@ -254,6 +268,16 @@ def finalize_middle_json(pdf_info_list, hybrid_pipeline_model, _ocr_enable, _vlm
         llm_aided_title_start_time = time.time()
         llm_aided_title(pdf_info_list, title_aided_config)
         logger.info(f'llm aided title time: {round(time.time() - llm_aided_title_start_time, 2)}')
+
+    if text_aided_enable:
+        llm_aided_text_start_time = time.time()
+        llm_aided_text_prune(pdf_info_list, text_aided_config)
+        logger.info(f'llm aided text prune time: {round(time.time() - llm_aided_text_start_time, 2)}')
+
+    if formula_aided_enable:
+        llm_aided_formula_start_time = time.time()
+        llm_aided_formula_prune(pdf_info_list, formula_aided_config)
+        logger.info(f'llm aided formula prune time: {round(time.time() - llm_aided_formula_start_time, 2)}')
 
     cleanup_internal_para_block_metadata(pdf_info_list)
 
